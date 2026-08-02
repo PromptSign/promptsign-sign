@@ -1,0 +1,63 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Runs the action against a fixture in this repo, which is the only way to
+  # reach the parts no local check can: the CLI download and its checksum, the
+  # OIDC token exchange, `trust fetch` on a cold runner, and whether the freshly
+  # written signature verifies. A pull request from a fork gets no OIDC token,
+  # so the job declares that and skips rather than failing on a boundary GitHub
+  # enforces deliberately.
+  self-check:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build a fixture to sign
+        run: |
+          mkdir -p fixture/scripts
+          printf -- '---\nname: fixture\ndescription: signed by this repo CI\n---\n\nbody\n' > fixture/SKILL.md
+          printf 'print("hello")\n' > fixture/scripts/run.py
+
+      - id: sign
+        uses: ./
+        with:
+          path: fixture
+          version: ${{ github.sha }}
+          kind: skill
+
+      - name: The outputs must describe what was actually written
+        env:
+          BUNDLE: ${{ steps.sign.outputs.bundle }}
+          IDENTITY: ${{ steps.sign.outputs.identity }}
+          VERSION: ${{ steps.sign.outputs.version }}
+        run: |
+          set -euo pipefail
+          test -f "$BUNDLE" || { echo "::error::bundle output names $BUNDLE, which does not exist"; exit 1; }
+          [ "$BUNDLE" = fixture/.promptsign/bundle.json ] || { echo "::error::unexpected bundle path $BUNDLE"; exit 1; }
+          [ "$VERSION" = "$GITHUB_SHA" ] || { echo "::error::version output is '$VERSION', expected $GITHUB_SHA"; exit 1; }
+          case "$IDENTITY" in
+            "https://github.com/$GITHUB_REPOSITORY/.github/workflows/ci.yml@"*) ;;
+            *) echo "::error::identity output is '$IDENTITY', which does not name this workflow"; exit 1 ;;
+          esac
+
+      - name: A tampered payload must stop verifying
+        run: |
+          set -euo pipefail
+          printf 'print("evil")\n' > fixture/scripts/run.py
+          if promptsign verify fixture; then
+            echo "::error::verification passed after the payload was modified"
+            exit 1
+          fi

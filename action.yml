@@ -1,0 +1,241 @@
+name: PromptSign
+description: Sign AI instruction files with a verified CI identity. No keys, no secrets.
+author: PromptSign
+
+branding:
+  icon: check-circle
+  color: green
+
+inputs:
+  path:
+    description: File or directory to sign.
+    required: true
+  version:
+    description: >-
+      Version recorded in the manifest for the thing being signed. This is
+      normally the release being cut, such as 1.4.0, or the github.ref_name
+      context when the workflow runs from a tag. Verifiers report it, so a
+      consumer can tell which release a copy came from.
+    default: ''
+  name:
+    description: Name recorded in the manifest. Defaults to the basename of `path`.
+    default: ''
+  kind:
+    description: 'Artifact kind recorded in the manifest: skill, plugin, agent, or instructions.'
+    default: ''
+  cli-version:
+    description: promptsign release tag to install. Pin it; don't track latest.
+    default: v0.3.0
+  embed:
+    description: Write the signature into the file's own frontmatter instead of a sidecar.
+    default: 'false'
+  args:
+    description: >-
+      Extra flags passed through to `promptsign sign`. Prefer the `version`,
+      `name` and `kind` inputs, because passing those flags here as well would
+      send them twice.
+    default: ''
+
+outputs:
+  identity:
+    description: The certificate identity the signature carries. This is what a consumer pins in policy.
+    value: ${{ steps.verify.outputs.identity }}
+  version:
+    description: The version recorded in the signed manifest.
+    value: ${{ steps.verify.outputs.version }}
+  bundle:
+    description: >-
+      Path to the signature that was written. This is a .psig.json sidecar, or
+      .promptsign/bundle.json inside a signed directory, or the file itself when
+      the signature was embedded in its frontmatter.
+    value: ${{ steps.verify.outputs.bundle }}
+
+runs:
+  using: composite
+  steps:
+    # Two things a caller can get wrong that are worth naming rather than
+    # letting them surface as a confusing failure further down.
+    #
+    # The identity comes from the job's OIDC token, which GitHub only mints when
+    # the caller grants the permission. An action cannot grant it to itself.
+    #
+    # Only the static musl builds are installed here, so the runner has to be
+    # Linux. On macOS and Windows the download would succeed and the binary
+    # would simply not run.
+    - name: Check the job can sign on this runner
+      shell: bash
+      run: |
+        if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+          echo "::error::No OIDC token available. Add this to the job:"
+          echo "::error::  permissions:"
+          echo "::error::    id-token: write"
+          exit 1
+        fi
+        if [ "$RUNNER_OS" != Linux ]; then
+          echo "::error::promptsign-sign runs on Linux runners only, and this one is $RUNNER_OS."
+          echo "::error::Call the promptsign CLI directly instead; the release page has macOS and Windows binaries."
+          exit 1
+        fi
+
+    - name: Install promptsign ${{ inputs.cli-version }}
+      shell: bash
+      env:
+        PS_CLI_VERSION: ${{ inputs.cli-version }}
+      run: |
+        set -euo pipefail
+        case "$RUNNER_ARCH" in
+          X64)   target="x86_64-unknown-linux-musl" ;;
+          ARM64) target="aarch64-unknown-linux-musl" ;;
+          *)
+            echo "::error::No promptsign build for $RUNNER_OS/$RUNNER_ARCH."
+            exit 1
+            ;;
+        esac
+
+        base="https://github.com/PromptSign/promptsign-cli/releases/download/$PS_CLI_VERSION"
+        file="promptsign-$target.tar.gz"
+        tmp="$(mktemp -d)"
+
+        # --fail so a mistyped cli-version is reported as the 404 it is, rather
+        # than saving an error page and failing later on a checksum mismatch.
+        curl -fsSLo "$tmp/$file" "$base/$file"
+        curl -fsSLo "$tmp/SHA256SUMS" "$base/SHA256SUMS"
+
+        # One checksum file covers every archive in a release; check only ours,
+        # since the others aren't downloaded and `-c` fails on a missing file.
+        ( cd "$tmp" && grep " $file\$" SHA256SUMS | sha256sum -c - )
+
+        tar -xzf "$tmp/$file" -C "$tmp"
+        # -print -quit rather than a pipe into head: under pipefail, head
+        # closing the pipe early can kill find with SIGPIPE and fail the step.
+        bin="$(find "$tmp" -type f -name promptsign -print -quit)"
+        if [ -z "$bin" ]; then
+          echo "::error::No promptsign binary inside $file."
+          exit 1
+        fi
+        chmod +x "$bin"
+        echo "$(dirname "$bin")" >> "$GITHUB_PATH"
+
+    # Trust material and TOFU pins live under PROMPTSIGN_HOME. Keeping it in
+    # RUNNER_TEMP makes every run hermetic, which matters on a self-hosted
+    # runner: a pin left by an earlier job for a different workflow identity
+    # would make the verify gate below fail on a perfectly good signature.
+    - name: Point promptsign at a per-run home
+      shell: bash
+      run: echo "PROMPTSIGN_HOME=$RUNNER_TEMP/promptsign" >> "$GITHUB_ENV"
+
+    # Not optional: `sign` verifies its own output before writing it, and
+    # verification is offline against the cached Sigstore roots. A fresh runner
+    # has no cache, so without this every run fails with
+    # "no Sigstore trust root … run promptsign trust fetch first".
+    - name: Cache the Sigstore trust roots
+      shell: bash
+      run: promptsign trust fetch
+
+    # Inputs go through the environment rather than into the script text:
+    # `${{ }}` interpolation happens before bash sees the line, so a path or a
+    # flag containing shell metacharacters would otherwise be executed.
+    - name: Sign
+      shell: bash
+      env:
+        PS_PATH: ${{ inputs.path }}
+        PS_NAME: ${{ inputs.name }}
+        PS_VERSION: ${{ inputs.version }}
+        PS_KIND: ${{ inputs.kind }}
+        PS_EMBED: ${{ inputs.embed }}
+        PS_ARGS: ${{ inputs.args }}
+      run: |
+        set -euo pipefail
+        flags=()
+        [ -n "$PS_NAME" ]    && flags+=(--name "$PS_NAME")
+        [ -n "$PS_VERSION" ] && flags+=(--version "$PS_VERSION")
+        [ -n "$PS_KIND" ]    && flags+=(--kind "$PS_KIND")
+        [ "$PS_EMBED" = 'true' ] && flags+=(--embed)
+        # ${flags[@]+...} because expanding an empty array is an unbound
+        # variable under set -u on bash before 4.4.
+        # PS_ARGS is deliberately unquoted: it carries multiple flags.
+        # shellcheck disable=SC2086
+        promptsign sign "$PS_PATH" ${flags[@]+"${flags[@]}"} $PS_ARGS
+
+    # Gate: never leave behind a signature that does not verify. This is the
+    # same check the promptsign release workflow runs on its own artifacts.
+    - name: Verify what was just signed
+      id: verify
+      shell: bash
+      env:
+        PS_PATH: ${{ inputs.path }}
+        PS_EMBED: ${{ inputs.embed }}
+      run: |
+        set -euo pipefail
+        promptsign verify --json "$PS_PATH" > "$RUNNER_TEMP/promptsign-verify.json"
+        # node rather than jq: every runner that can run a JavaScript action has
+        # Node, which is not true of jq on self-hosted runners.
+        field() {
+          node -e 'const r=require(process.argv[1]);process.stdout.write(String(r[process.argv[2]]??""))' \
+            "$RUNNER_TEMP/promptsign-verify.json" "$1"
+        }
+        identity="$(field identity)"
+        name="$(field name)"
+        version="$(field version)"
+
+        # An embedded signature lives in the file's own frontmatter, so there is
+        # no sidecar to point at. A directory carries its bundle inside it.
+        if [ "$PS_EMBED" = 'true' ]; then
+          bundle="$PS_PATH"
+        elif [ -d "$PS_PATH" ]; then
+          bundle="${PS_PATH%/}/.promptsign/bundle.json"
+        else
+          bundle="$PS_PATH.psig.json"
+        fi
+
+        {
+          echo "identity=$identity"
+          echo "version=$version"
+          echo "bundle=$bundle"
+        } >> "$GITHUB_OUTPUT"
+
+        # A heredoc rather than a stack of echoes, because the summary is a block
+        # of Markdown. Expansions are values, and bash does not rescan them, so
+        # a backtick arriving in $name or $identity cannot run anything.
+        cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+        ### Signed with PromptSign
+
+        | | |
+        |---|---|
+        | artifact | \`$name\`${version:+ \`$version\`} |
+        | signature | \`$bundle\` |
+        | identity | \`$identity\` |
+
+        Anyone can check this signature. Clone the repository at this commit, install
+        the CLI from <https://promptsign.ai>, and run these two commands from the
+        repository root:
+
+        \`\`\`sh
+        promptsign trust fetch      # once per machine, caches the Sigstore roots
+        promptsign verify $PS_PATH
+        \`\`\`
+
+        That reports the identity above and confirms that not one byte has changed since
+        signing. To check it without installing anything, drag the signed folder onto
+        <https://promptsign.ai/verify>, which runs in the browser and uploads nothing.
+
+        By default the first identity seen is the one that gets pinned. To require this
+        exact signer from the start instead, write \`.promptsign/policy.json\` in the
+        consuming project:
+
+        \`\`\`json
+        {
+          "schema": "promptsign/policy/v1",
+          "default": "warn",
+          "rules": [
+            { "pattern": "$name",
+              "identity": "$identity",
+              "issuer": "https://token.actions.githubusercontent.com",
+              "action": "enforce" }
+          ]
+        }
+        \`\`\`
+
+        Run \`promptsign policy init\` to start from the default file, or
+        \`promptsign policy show\` to see which policy is in effect.
+        EOF
