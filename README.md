@@ -109,8 +109,13 @@ the job, so a run leaves nothing behind on a self-hosted runner and cannot be
 affected by what an earlier job pinned.
 
 Linux runners only, on x86_64 or arm64. macOS and Windows runners can call the
-CLI directly, and the [release page](https://github.com/PromptSign/promptsign-cli/releases)
-has binaries for both.
+CLI directly, and the [release page](https://github.com/PromptSign/promptsign-cli/releases) has binaries for both.
+
+## Learn more
+
+Pair this with [`promptsign-verify`](https://github.com/PromptSign/promptsign-verify)
+to gate pull requests on the signature this action produces. Full docs, including the
+npm SDK and the Claude Code plugin, are on the [Integrate](https://promptsign.ai/integrate?c=actions-listing) page.
 
 ## License
 
