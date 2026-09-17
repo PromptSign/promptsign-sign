@@ -30,7 +30,7 @@ promptsign verify skills/my-skill
 | Input | Default | What it does |
 |---|---|---|
 | `path` | *required* | The file or directory to sign. A directory is signed as one manifest, scripts included. |
-| `version` | none | The version recorded in the manifest, normally the release being cut (`${{ github.ref_name }}`, or `1.4.0`). Verifiers report it, so a consumer can tell *which* release a copy came from. An unversioned signature still proves origin, but not which build. |
+| `version` | none | The version recorded in the manifest, usually the release being cut (`${{ github.ref_name }}`, or `1.4.0`). Verifiers report it, so a consumer can tell *which* release a copy came from. An unversioned signature still proves origin, but not which build. |
 | `name` | basename of `path` | The name recorded in the manifest. |
 | `kind` | none | What this is: `skill`, `plugin`, `agent`, `instructions`. |
 | `cli-version` | `v0.3.0` | Which [promptsign release](https://github.com/PromptSign/promptsign-cli/releases) to install. Pin it; don't track `latest`. |
@@ -61,7 +61,7 @@ https://github.com/OWNER/REPO/.github/workflows/publish.yml@refs/heads/main
 with issuer `https://token.actions.githubusercontent.com`. That identity is the
 workflow file's path and the ref it ran from. Rename the file or run it from a
 different branch and the identity changes, which is the point: it describes what
-actually signed.
+signed.
 
 A consumer pins it in policy with a glob:
 
@@ -74,7 +74,7 @@ A consumer pins it in policy with a glob:
 
 **Signatures are public.** The identity goes into Rekor, a public append-only
 transparency log. Signing from a private repository publishes that repository's
-name and workflow path, permanently.
+name and workflow path, and there's no taking it back.
 
 **Fork pull requests can't sign.** GitHub doesn't grant `id-token: write` to
 workflows triggered from forks. That's a deliberate boundary rather than a bug
@@ -109,7 +109,7 @@ the job, so a run leaves nothing behind on a self-hosted runner and cannot be
 affected by what an earlier job pinned.
 
 Linux runners only, on x86_64 or arm64. macOS and Windows runners can call the
-CLI directly, and the [release page](https://github.com/PromptSign/promptsign-cli/releases) has binaries for both.
+CLI itself, and the [release page](https://github.com/PromptSign/promptsign-cli/releases) has binaries for both.
 
 ## Learn more
 

@@ -12,10 +12,10 @@ inputs:
     required: true
   version:
     description: >-
-      Version recorded in the manifest for the thing being signed. This is
-      normally the release being cut, such as 1.4.0, or the github.ref_name
-      context when the workflow runs from a tag. Verifiers report it, so a
-      consumer can tell which release a copy came from.
+      Version recorded in the manifest for the thing being signed: usually the
+      release being cut, such as 1.4.0, or the github.ref_name context when
+      the workflow runs from a tag. Verifiers report it, so a consumer can
+      tell which release a copy came from.
     default: ''
   name:
     description: Name recorded in the manifest. Defaults to the basename of `path`.
@@ -25,7 +25,7 @@ inputs:
     default: ''
   cli-version:
     description: promptsign release tag to install. Pin it; don't track latest.
-    default: v0.3.0
+    default: v0.3.6
   embed:
     description: Write the signature into the file's own frontmatter instead of a sidecar.
     default: 'false'
@@ -61,7 +61,7 @@ runs:
     #
     # Only the static musl builds are installed here, so the runner has to be
     # Linux. On macOS and Windows the download would succeed and the binary
-    # would simply not run.
+    # would not run.
     - name: Check the job can sign on this runner
       shell: bash
       run: |
@@ -73,7 +73,7 @@ runs:
         fi
         if [ "$RUNNER_OS" != Linux ]; then
           echo "::error::promptsign-sign runs on Linux runners only, and this one is $RUNNER_OS."
-          echo "::error::Call the promptsign CLI directly instead; the release page has macOS and Windows binaries."
+          echo "::error::Call the promptsign CLI itself instead; the release page has macOS and Windows binaries."
           exit 1
         fi
 
@@ -153,7 +153,7 @@ runs:
         [ "$PS_EMBED" = 'true' ] && flags+=(--embed)
         # ${flags[@]+...} because expanding an empty array is an unbound
         # variable under set -u on bash before 4.4.
-        # PS_ARGS is deliberately unquoted: it carries multiple flags.
+        # PS_ARGS stays unquoted because it carries multiple flags.
         # shellcheck disable=SC2086
         promptsign sign "$PS_PATH" ${flags[@]+"${flags[@]}"} $PS_ARGS
 

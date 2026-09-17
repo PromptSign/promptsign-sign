@@ -14,8 +14,8 @@ jobs:
   # reach the parts no local check can: the CLI download and its checksum, the
   # OIDC token exchange, `trust fetch` on a cold runner, and whether the freshly
   # written signature verifies. A pull request from a fork gets no OIDC token,
-  # so the job declares that and skips rather than failing on a boundary GitHub
-  # enforces deliberately.
+  # so the job declares that and skips instead of failing on a boundary GitHub
+  # chose to enforce.
   self-check:
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
@@ -38,7 +38,7 @@ jobs:
           version: ${{ github.sha }}
           kind: skill
 
-      - name: The outputs must describe what was actually written
+      - name: The outputs must describe what was written
         env:
           BUNDLE: ${{ steps.sign.outputs.bundle }}
           IDENTITY: ${{ steps.sign.outputs.identity }}
