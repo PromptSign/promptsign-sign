@@ -25,7 +25,7 @@ inputs:
     default: ''
   cli-version:
     description: promptsign release tag to install. Pin it; don't track latest.
-    default: v0.3.6
+    default: v0.4.0
   embed:
     description: Write the signature into the file's own frontmatter instead of a sidecar.
     default: 'false'
