@@ -33,7 +33,7 @@ promptsign verify skills/my-skill
 | `version` | none | The version recorded in the manifest, usually the release being cut (`${{ github.ref_name }}`, or `1.4.0`). Verifiers report it, so a consumer can tell *which* release a copy came from. An unversioned signature still proves origin, but not which build. |
 | `name` | basename of `path` | The name recorded in the manifest. |
 | `kind` | none | What this is: `skill`, `plugin`, `agent`, `instructions`. |
-| `cli-version` | `v0.3.0` | Which [promptsign release](https://github.com/PromptSign/promptsign-cli/releases) to install. Pin it; don't track `latest`. |
+| `cli-version` | `v0.5.0` | Which [promptsign release](https://github.com/PromptSign/promptsign-cli/releases) to install. Pin it; don't track `latest`. |
 | `embed` | `false` | Write the signature into the file's own frontmatter instead of a sidecar, so it travels with the file. Single Markdown files only. |
 | `args` | none | Anything else passed through to `promptsign sign`. Don't repeat `--name`, `--version`, or `--kind` here. Those have their own inputs, and passing both sends the flag twice. |
 
